@@ -1,0 +1,200 @@
+#include "mainwindow.h"
+#include <QMenuBar>
+#include <QMenu>
+#include <QAction>
+#include <QStatusBar>
+#include <QApplication>
+#include <QStyle>
+#include <QMessageBox>
+#include <QVBoxLayout>
+#include <QPushButton>
+#include <QLabel>
+#include <QDialog>
+#include <QCloseEvent> // 确保包含了 QCloseEvent 的头文件
+
+/**
+ * @brief MainWindow 类的构造函数
+ * @param parent 父窗口部件指针
+ * @details
+ * - 初始化主窗口，创建并设置核心的 DrawingWidget 为中心控件。
+ * - 初始化状态栏并显示欢迎信息。
+ * - 连接 DrawingWidget 的信号到 MainWindow 的槽函数，以实现状态更新和菜单控制。
+ * - 调用 createMenus() 创建所有菜单和子菜单。
+ * - 设置窗口标题、大小和全局的深色主题样式表 (QSS)。
+ */
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+{
+    drawingWidget = new DrawingWidget(this);
+    setCentralWidget(drawingWidget);
+
+    //初始化状态栏
+    mainStatusBar = new QStatusBar(this);
+    setStatusBar(mainStatusBar);
+    mainStatusBar->showMessage("欢迎使用计算几何工具！");
+
+    //连接 DrawingWidget 的信号到 MainWindow 的槽
+    connect(drawingWidget, &DrawingWidget::modeChanged, this, &MainWindow::updateStatus);
+    //连接 DrawingWidget 的新信号到 MainWindow 的新槽
+    connect(drawingWidget, &DrawingWidget::polygonsReady, this, &MainWindow::onPolygonsReady);
+
+    createMenus();
+
+    setWindowTitle("软件开发综合训练大作业——何恩杰 (C++/Qt)");
+    resize(929, 523);
+
+    //设置全局QSS美化样式
+    qApp->setStyleSheet(
+        "QMainWindow { background-color: #2E2E2E; }"
+        "QMenuBar { background-color: #3C3C3C; color: #F0F0F0; }"
+        "QMenuBar::item:selected { background-color: #555555; }"
+        "QMenu { background-color: #3C3C3C; color: #F0F0F0; border: 1px solid #555; }"
+        "QMenu::item:selected { background-color: #0078D7; }"
+        "QStatusBar { color: #F0F0F0; }"
+        );
+}
+
+/**
+ * @brief MainWindow 类的析构函数
+ */
+MainWindow::~MainWindow()
+{
+}
+
+/**
+ * @brief 更新状态栏文本的槽函数
+ * @param message 从 DrawingWidget 发射的、要显示在状态栏上的新消息
+ */
+void MainWindow::updateStatus(const QString &message)
+{
+    mainStatusBar->showMessage(message);
+}
+
+/**
+ * @brief 根据多边形绘制状态启用或禁用菜单的槽函数
+ * @param ready bool值，为 true 时表示两个多边形已准备好，应启用菜单；false 则禁用。
+ * @details 此槽函数由 DrawingWidget 在完成两个多边形绘制后发射的 `polygonsReady` 信号触发。
+ */
+void MainWindow::onPolygonsReady(bool ready)
+{
+    // 现在是启用或禁用整个子菜单
+    intersectionMenu->setEnabled(ready);
+    unionMenu->setEnabled(ready);
+}
+
+/**
+ * @brief 创建并初始化程序的所有菜单、子菜单和动作
+ * @details
+ * - **文件菜单**: 包含“清空屏幕”和“退出”功能。
+ * - **算法菜单**: 包含所有核心几何算法的入口。
+ * - **计算凸包**: 被设置为一个子菜单，内含 "Andrew 算法" 和 "Graham 算法" 两个选项。
+ * - **计算交并集**: 也是一个子菜单，首先有一个“开始绘制”的启动项，
+ * 然后是两个默认禁用的子菜单“求交集”和“求并集”，每个子菜单内都提供了
+ * "QPainterPath 法" 和 "Weiler-Atherton 法" 两种算法选项。
+ * - **三角剖分** 和 **计算面积**: 作为直接的菜单动作。
+ * - **执行计算菜单**: 提供一个全局的“执行”按钮，用于触发已设置好的计算任务。
+ *
+ * 所有菜单项都通过 `connect` 函数与 DrawingWidget 中对应的槽函数相连。
+ */
+void MainWindow::createMenus()
+{
+    // --- 文件菜单 ---
+    QMenu *fileMenu = menuBar()->addMenu("文件");
+    QAction *clearAction = new QAction("清空屏幕", this);
+    clearAction->setIcon(style()->standardIcon(QStyle::SP_FileIcon));
+    connect(clearAction, &QAction::triggered, drawingWidget, &DrawingWidget::clearScreen);
+    fileMenu->addAction(clearAction);
+    QAction *quitAction = new QAction("退出", this);
+    quitAction->setIcon(style()->standardIcon(QStyle::SP_DialogCloseButton));
+    connect(quitAction, &QAction::triggered, this, &QWidget::close);
+    fileMenu->addAction(quitAction);
+
+    // --- 算法菜单 ---
+    QMenu *algorithmMenu = menuBar()->addMenu("算法");
+
+    QMenu *convexHullMenu = algorithmMenu->addMenu("1. 计算凸包");
+    QAction *andrewAction = new QAction("Andrew 算法 (Monotone Chain)", this);
+    connect(andrewAction, &QAction::triggered, drawingWidget, &DrawingWidget::startAndrewConvexHull);
+    convexHullMenu->addAction(andrewAction);
+    QAction *grahamAction = new QAction("Graham 算法 (Graham Scan)", this);
+    connect(grahamAction, &QAction::triggered, drawingWidget, &DrawingWidget::startGrahamConvexHull);
+    convexHullMenu->addAction(grahamAction);
+
+    intersectionUnionMenu = algorithmMenu->addMenu("2. 计算多边形交集、并集");
+    QAction *startDrawingAction = new QAction("开始绘制", this);
+    connect(startDrawingAction, &QAction::triggered, this, [this](){
+        drawingWidget->setMode(DrawingWidget::DRAW_POLYGON_A);
+    });
+    intersectionUnionMenu->addAction(startDrawingAction);
+    intersectionUnionMenu->addSeparator();
+
+    // --- “求交集”子菜单 ---
+    intersectionMenu = intersectionUnionMenu->addMenu("求交集");
+    intersectionMenu->setEnabled(false);
+    QAction *intersectActionQPath = new QAction("QPainterPath 法", this);
+    connect(intersectActionQPath, &QAction::triggered, drawingWidget, &DrawingWidget::showIntersection_QPainterPath);
+    intersectionMenu->addAction(intersectActionQPath);
+    QAction *intersectActionWeiler = new QAction("Weiler-Atherton 法", this);
+    connect(intersectActionWeiler, &QAction::triggered, drawingWidget, &DrawingWidget::showIntersection_Weiler);
+    intersectionMenu->addAction(intersectActionWeiler);
+
+
+    // --- “求并集”子菜单 ---
+    unionMenu = intersectionUnionMenu->addMenu("求并集");
+    unionMenu->setEnabled(false);
+    QAction *unionActionQPath = new QAction("QPainterPath 法", this);
+    connect(unionActionQPath, &QAction::triggered, drawingWidget, &DrawingWidget::showUnion_QPainterPath);
+    unionMenu->addAction(unionActionQPath);
+    QAction *unionActionWeiler = new QAction("Weiler-Atherton 法", this);
+    connect(unionActionWeiler, &QAction::triggered, drawingWidget, &DrawingWidget::showUnion_Weiler);
+    unionMenu->addAction(unionActionWeiler);
+
+    // --- 其他菜单项 ---
+    QAction *triangulateAction = new QAction("3. 三角剖分", this);
+    connect(triangulateAction, &QAction::triggered, this, [this](){
+        drawingWidget->setMode(DrawingWidget::DRAW_POLYGON);
+        drawingWidget->setTask("triangulate");
+    });
+    algorithmMenu->addAction(triangulateAction);
+    QAction *areaAction = new QAction("4. 计算多边形面积", this);
+    connect(areaAction, &QAction::triggered, this, [this](){
+        drawingWidget->setMode(DrawingWidget::DRAW_POLYGON);
+        drawingWidget->setTask("area");
+    });
+    algorithmMenu->addAction(areaAction);
+
+    // --- 执行菜单 ---
+    QMenu *runMenu = menuBar()->addMenu("执行计算");
+    QAction *runAction = new QAction("执行", this);
+    runAction->setIcon(style()->standardIcon(QStyle::SP_MediaPlay));
+    connect(runAction, &QAction::triggered, drawingWidget, &DrawingWidget::performCalculation);
+    runMenu->addAction(runAction);
+}
+
+/**
+ * @brief 重写窗口关闭事件，在退出前显示一个感谢对话框
+ * @param event 关闭事件指针
+ */
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    QDialog dialog(this);
+    dialog.setWindowTitle("🎉 提示");
+
+    QLabel *label = new QLabel("😄谢谢您的使用！<br>🌈 祝您生活愉快！");
+    label->setStyleSheet("font-size: 16px; color: #0078D7; font-family: 'Microsoft YaHei';");
+
+    QVBoxLayout *layout = new QVBoxLayout();
+    layout->addWidget(label);
+
+    QPushButton *okButton = new QPushButton("✅ 确定");
+    okButton->setStyleSheet("padding: 6px 12px; background-color: #0078D7; color: white;");
+    layout->addWidget(okButton);
+    layout->setAlignment(okButton, Qt::AlignRight);
+
+    QObject::connect(okButton, &QPushButton::clicked, &dialog, &QDialog::accept);
+
+    dialog.setLayout(layout);
+    dialog.exec();
+
+    event->accept();
+}
